@@ -47,17 +47,27 @@ class Compiler
         if (preg_match('/@extends\s*\(\s*[\'"](.+?)[\'"]\s*\)/', $content, $extendsMatch)) {
             $layout = $extendsMatch[1];
             
-            // Extract all sections (handle nested sections properly)
+            // Extract all sections
             $sections = [];
             
-            // Find all @section declarations
+            // FIRST: Handle inline sections like @section('title', 'value')
+            preg_match_all('/@section\s*\(\s*[\'"]([^\'\"]+?)[\'"]\s*,\s*[\'"]([^\'"]*?)[\'"]\s*\)/s', $content, $inlineSections);
+            
+            foreach ($inlineSections[1] as $index => $sectionName) {
+                $sections[$sectionName] = $inlineSections[2][$index];
+            }
+            
+            // Remove inline sections from content
+            $content = preg_replace('/@section\s*\(\s*[\'"]([^\'\"]+?)[\'"]\s*,\s*[\'"]([^\'"]*?)[\'"]\s*\)/s', '', $content);
+            
+            // SECOND: Handle block sections @section('name') ... @endsection
             preg_match_all('/@section\s*\(\s*[\'"]([^\'\"]+?)[\'"]\s*\)/s', $content, $sectionStarts, PREG_OFFSET_CAPTURE);
             
             foreach ($sectionStarts[0] as $index => $startMatch) {
                 $sectionName = $sectionStarts[1][$index][0];
                 $startPos = $startMatch[1] + strlen($startMatch[0]);
                 
-                // Find matching @endsection (count nested sections)
+                // Find matching @endsection
                 $depth = 1;
                 $pos = $startPos;
                 $endPos = false;
@@ -119,13 +129,9 @@ class Compiler
             return $layoutContent;
         }
         
-        // No extends, just compile sections inline
-        $content = preg_replace(
-            '/@section\s*\(\s*[\'"](.+?)[\'"]\s*\)/',
-            '',
-            $content
-        );
-        
+        // No extends, just remove section tags
+        $content = preg_replace('/@section\s*\(\s*[\'"](.+?)[\'"]\s*,\s*[\'"]([^\'"]*?)[\'"]\s*\)/s', '', $content);
+        $content = preg_replace('/@section\s*\(\s*[\'"](.+?)[\'"]\s*\)/', '', $content);
         $content = preg_replace('/@endsection/', '', $content);
         
         return $content;
@@ -153,12 +159,72 @@ class Compiler
 
     protected function compileIf($content)
     {
-        return preg_replace('/@if\s*\((.*?)\)/', '<?php if($1): ?>', $content);
+        return preg_replace_callback(
+            '/@if\s*\(/',
+            function($matches) use (&$content) {
+                static $offset = 0;
+                
+                $pos = strpos($content, $matches[0], $offset);
+                if ($pos === false) return $matches[0];
+                
+                $start = $pos + strlen($matches[0]);
+                $depth = 1;
+                $i = $start;
+                
+                while ($depth > 0 && $i < strlen($content)) {
+                    if ($content[$i] === '(') {
+                        $depth++;
+                    } elseif ($content[$i] === ')') {
+                        $depth--;
+                    }
+                    $i++;
+                }
+                
+                if ($depth === 0) {
+                    $condition = substr($content, $start, $i - $start - 1);
+                    $offset = $i;
+                    return '<?php if(' . $condition . '): ?>';
+                }
+                
+                return $matches[0];
+            },
+            $content
+        );
     }
 
     protected function compileElseif($content)
     {
-        return preg_replace('/@elseif\s*\((.*?)\)/', '<?php elseif($1): ?>', $content);
+        return preg_replace_callback(
+            '/@elseif\s*\(/',
+            function($matches) use (&$content) {
+                static $offset = 0;
+                
+                $pos = strpos($content, $matches[0], $offset);
+                if ($pos === false) return $matches[0];
+                
+                $start = $pos + strlen($matches[0]);
+                $depth = 1;
+                $i = $start;
+                
+                while ($depth > 0 && $i < strlen($content)) {
+                    if ($content[$i] === '(') {
+                        $depth++;
+                    } elseif ($content[$i] === ')') {
+                        $depth--;
+                    }
+                    $i++;
+                }
+                
+                if ($depth === 0) {
+                    $condition = substr($content, $start, $i - $start - 1);
+                    $offset = $i;
+                    return '<?php elseif(' . $condition . '): ?>';
+                }
+                
+                return $matches[0];
+            },
+            $content
+        );
     }
 
     protected function compileElse($content)
@@ -173,7 +239,7 @@ class Compiler
 
     protected function compileFor($content)
     {
-        return preg_replace('/@for\s*\((.+?)\)/', '<?php for($1): ?>', $content);
+        return preg_replace('/@for\s*\((.+?)\)/s', '<?php for($1): ?>', $content);
     }
 
     protected function compileEndFor($content)
@@ -183,7 +249,7 @@ class Compiler
 
     protected function compileForeach($content)
     {
-        return preg_replace('/@foreach\s*\((.+?)\)/', '<?php foreach($1): ?>', $content);
+        return preg_replace('/@foreach\s*\((.+?)\)/s', '<?php foreach($1): ?>', $content);
     }
 
     protected function compileEndForeach($content)
@@ -193,7 +259,37 @@ class Compiler
 
     protected function compileWhile($content)
     {
-        return preg_replace('/@while\s*\((.*?)\)/', '<?php while($1): ?>', $content);
+        return preg_replace_callback(
+            '/@while\s*\(/',
+            function($matches) use (&$content) {
+                static $offset = 0;
+                
+                $pos = strpos($content, $matches[0], $offset);
+                if ($pos === false) return $matches[0];
+                
+                $start = $pos + strlen($matches[0]);
+                $depth = 1;
+                $i = $start;
+                
+                while ($depth > 0 && $i < strlen($content)) {
+                    if ($content[$i] === '(') {
+                        $depth++;
+                    } elseif ($content[$i] === ')') {
+                        $depth--;
+                    }
+                    $i++;
+                }
+                
+                if ($depth === 0) {
+                    $condition = substr($content, $start, $i - $start - 1);
+                    $offset = $i;
+                    return '<?php while(' . $condition . '): ?>';
+                }
+                
+                return $matches[0];
+            },
+            $content
+        );
     }
 
     protected function compileEndWhile($content)
@@ -204,7 +300,7 @@ class Compiler
     protected function compileEchos($content)
     {
         return preg_replace(
-            '/\{\{\s*(.+?)\s*\}\}/',
+            '/\{\{\s*(.+?)\s*\}\}/s',
             '<?php echo htmlspecialchars((string)($1), ENT_QUOTES, \'UTF-8\'); ?>',
             $content
         );
@@ -213,7 +309,7 @@ class Compiler
     protected function compileRawEchos($content)
     {
         return preg_replace(
-            '/\{!!\s*(.+?)\s*!!\}/',
+            '/\{!!\s*(.+?)\s*!!\}/s',
             '<?php echo $1; ?>',
             $content
         );
