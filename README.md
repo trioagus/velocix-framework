@@ -2,6 +2,8 @@
 
 Complete guide to using the Velocix command-line interface (CLI) tool.
 
+[![Packagist](https://img.shields.io/packagist/v/trioagus/velocix-framework.svg)](https://packagist.org/packages/trioagus/velocix-framework)
+
 ## Table of Contents
 
 - [Introduction](#introduction)
