@@ -14,12 +14,10 @@ class CacheClearCommand extends Command
         $basePath = $this->getBasePath();
         $cleared = [];
 
-        // Clear view cache
         if ($this->clearViewCache($basePath)) {
             $cleared[] = 'View cache';
         }
 
-        // Clear route cache
         if ($this->clearRouteCache($basePath)) {
             $cleared[] = 'Route cache';
         }
