@@ -16,6 +16,11 @@ class Connection
         $this->driver = $config['driver'] ?? 'mysql';
         
         try {
+            // PENTING: Auto create database kalau belum ada
+            if (in_array($this->driver, ['mysql', 'pgsql', 'postgres', 'postgresql'])) {
+                $this->createDatabaseIfNotExists($config);
+            }
+            
             $dsn = $this->buildDsn($config);
             
             $options = [
@@ -25,7 +30,6 @@ class Connection
             ];
 
             if ($this->driver === 'mysql' && !empty($config['charset'])) {
-              
                 $options[1002] = "SET NAMES {$config['charset']}";
             }
 
@@ -37,6 +41,70 @@ class Connection
             );
         } catch (PDOException $e) {
             throw new \Exception("Database connection failed: " . $e->getMessage());
+        }
+    }
+
+    // METHOD BARU - Auto create database
+    protected function createDatabaseIfNotExists($config)
+    {
+        try {
+            $driver = $config['driver'] ?? 'mysql';
+            $dbName = $config['database'];
+            
+            if ($driver === 'mysql') {
+                // Connect tanpa specify database dulu
+                $dsn = sprintf(
+                    "mysql:host=%s;port=%s;charset=%s",
+                    $config['host'] ?? 'localhost',
+                    $config['port'] ?? 3306,
+                    $config['charset'] ?? 'utf8mb4'
+                );
+                
+                if (!empty($config['unix_socket'])) {
+                    $dsn = sprintf(
+                        "mysql:unix_socket=%s;charset=%s",
+                        $config['unix_socket'],
+                        $config['charset'] ?? 'utf8mb4'
+                    );
+                }
+                
+                $pdo = new PDO(
+                    $dsn,
+                    $config['username'] ?? null,
+                    $config['password'] ?? null,
+                    [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+                );
+                
+                // Create database if not exists
+                $charset = $config['charset'] ?? 'utf8mb4';
+                $collation = $config['collation'] ?? 'utf8mb4_unicode_ci';
+                $sql = "CREATE DATABASE IF NOT EXISTS `{$dbName}` CHARACTER SET {$charset} COLLATE {$collation}";
+                $pdo->exec($sql);
+                
+            } elseif (in_array($driver, ['pgsql', 'postgres', 'postgresql'])) {
+                // Connect ke default postgres database
+                $dsn = sprintf(
+                    "pgsql:host=%s;port=%s;dbname=postgres",
+                    $config['host'] ?? 'localhost',
+                    $config['port'] ?? 5432
+                );
+                
+                $pdo = new PDO(
+                    $dsn,
+                    $config['username'] ?? null,
+                    $config['password'] ?? null,
+                    [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+                );
+                
+                // Check if database exists
+                $stmt = $pdo->query("SELECT 1 FROM pg_database WHERE datname = '{$dbName}'");
+                if (!$stmt->fetchColumn()) {
+                    $pdo->exec("CREATE DATABASE \"{$dbName}\"");
+                }
+            }
+        } catch (PDOException $e) {
+            // Silent fail - user mungkin gak punya CREATE DATABASE privilege
+            // Biarkan error asli muncul di connection berikutnya
         }
     }
 
@@ -54,7 +122,6 @@ class Connection
                     $config['charset'] ?? 'utf8mb4'
                 );
                 
-                // Add unix_socket if provided
                 if (!empty($config['unix_socket'])) {
                     $dsn = sprintf(
                         "mysql:unix_socket=%s;dbname=%s;charset=%s",
@@ -69,7 +136,7 @@ class Connection
             case 'pgsql':
             case 'postgres':
             case 'postgresql':
-                $this->driver = 'pgsql'; // Normalize driver name
+                $this->driver = 'pgsql';
                 return sprintf(
                     "pgsql:host=%s;port=%s;dbname=%s",
                     $config['host'] ?? 'localhost',
@@ -78,22 +145,24 @@ class Connection
                 );
 
             case 'sqlite':
-                // Support both file path and :memory:
                 $database = $config['database'];
                 
                 if ($database === ':memory:') {
                     return 'sqlite::memory:';
                 }
                 
-                // If not absolute path, make it relative to project root
                 if ($database[0] !== '/') {
                     $database = getcwd() . '/' . $database;
                 }
                 
-                // Create directory if it doesn't exist
                 $dir = dirname($database);
                 if (!is_dir($dir)) {
                     mkdir($dir, 0755, true);
+                }
+                
+                if (!file_exists($database)) {
+                    touch($database);
+                    chmod($database, 0644);
                 }
                 
                 return "sqlite:{$database}";
