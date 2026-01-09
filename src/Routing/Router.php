@@ -45,6 +45,72 @@ class Router
         return $this->addRoute('PATCH', $uri, $action);
     }
 
+    /**
+     * Register resource routes
+     * 
+     * @param string $name Resource name (e.g., 'posts')
+     * @param string $controller Controller class name
+     * @param array $options Options: ['only' => [...], 'except' => [...]]
+     * @return void
+     */
+    public function resource($name, $controller, array $options = [])
+    {
+        $resourceRoutes = [
+            ['method' => 'GET', 'uri' => $name, 'action' => 'index', 'name' => "{$name}.index"],
+            ['method' => 'GET', 'uri' => "{$name}/create", 'action' => 'create', 'name' => "{$name}.create"],
+            ['method' => 'POST', 'uri' => $name, 'action' => 'store', 'name' => "{$name}.store"],
+            ['method' => 'GET', 'uri' => "{$name}/{id}", 'action' => 'show', 'name' => "{$name}.show"],
+            ['method' => 'GET', 'uri' => "{$name}/{id}/edit", 'action' => 'edit', 'name' => "{$name}.edit"],
+            ['method' => 'PUT', 'uri' => "{$name}/{id}", 'action' => 'update', 'name' => "{$name}.update"],
+            ['method' => 'PATCH', 'uri' => "{$name}/{id}", 'action' => 'update', 'name' => "{$name}.update"],
+            ['method' => 'DELETE', 'uri' => "{$name}/{id}", 'action' => 'destroy', 'name' => "{$name}.destroy"],
+        ];
+
+        // Filter routes based on 'only' or 'except' options
+        if (isset($options['only'])) {
+            $only = (array) $options['only'];
+            $resourceRoutes = array_filter($resourceRoutes, function($route) use ($only) {
+                return in_array($route['action'], $only);
+            });
+        }
+
+        if (isset($options['except'])) {
+            $except = (array) $options['except'];
+            $resourceRoutes = array_filter($resourceRoutes, function($route) use ($except) {
+                return !in_array($route['action'], $except);
+            });
+        }
+
+        // Register each route
+        foreach ($resourceRoutes as $routeConfig) {
+            $route = $this->addRoute(
+                $routeConfig['method'],
+                $routeConfig['uri'],
+                "{$controller}@{$routeConfig['action']}"
+            );
+            
+            $route->name($routeConfig['name']);
+        }
+    }
+
+    /**
+     * Register API resource routes (without create/edit)
+     * 
+     * @param string $name Resource name
+     * @param string $controller Controller class name
+     * @param array $options Options
+     * @return void
+     */
+    public function apiResource($name, $controller, array $options = [])
+    {
+        $options['except'] = array_merge(
+            isset($options['except']) ? (array) $options['except'] : [],
+            ['create', 'edit']
+        );
+        
+        $this->resource($name, $controller, $options);
+    }
+
     public function group($attributes, $callback)
     {
         if (is_string($attributes)) {

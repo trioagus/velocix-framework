@@ -21,6 +21,13 @@ abstract class Migration
         $schema->execute();
     }
 
+    protected function alterTable($table, $callback)
+    {
+        $schema = new AlterSchema($this->connection, $table);
+        $callback($schema);
+        $schema->execute();
+    }
+
     protected function dropTable($table)
     {
         $sql = "DROP TABLE IF EXISTS {$table}";

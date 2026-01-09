@@ -13,34 +13,59 @@ class StorageLinkCommand extends Command
     {
         $basePath = getcwd();
         
-        $target = $basePath . '/storage/app/public';
-        $link = $basePath . '/public/storage';
-
-        // Check if target exists
+        // Load filesystem config
+        $configPath = $basePath . '/config/filesystem.php';
+        
+        if (!file_exists($configPath)) {
+            $this->error('Config file not found: config/filesystem.php');
+            return;
+        }
+        
+        $config = require $configPath;
+        $links = $config['links'] ?? [];
+        
+        if (empty($links)) {
+            $this->error('No links configured in config/filesystem.php');
+            return;
+        }
+        
+        foreach ($links as $link => $target) {
+            $this->createLink($link, $target);
+        }
+    }
+    
+    protected function createLink($link, $target)
+    {
+        // Ensure target directory exists
         if (!is_dir($target)) {
             mkdir($target, 0755, true);
-            $this->info("Created storage directory: {$target}");
+            $this->info("Created target directory: {$target}");
         }
-
-        // Remove existing link if it exists
+        
+        // Remove existing link if exists
         if (file_exists($link)) {
             if (is_link($link)) {
                 unlink($link);
-                $this->info('Removed existing symbolic link.');
+                $this->info("Removed existing link: {$link}");
             } else {
-                $this->error('The "public/storage" path already exists and is not a symbolic link.');
+                $this->error("Path already exists and is not a symlink: {$link}");
+                $this->line('Please remove or rename it first.');
                 return;
             }
         }
-
+        
+        // Create parent directory if needed
+        $linkDir = dirname($link);
+        if (!is_dir($linkDir)) {
+            mkdir($linkDir, 0755, true);
+        }
+        
         // Create symbolic link
         if (symlink($target, $link)) {
-            $this->info('✓ Symbolic link created successfully!');
-            $this->line("  From: {$link}");
-            $this->line("  To: {$target}");
+            $this->info("✓ Linked: {$link}");
+            $this->line("  → {$target}");
         } else {
-            $this->error('Failed to create symbolic link.');
-            $this->line('Try running with sudo or check permissions.');
+            $this->error("Failed to create symlink: {$link}");
         }
     }
 }

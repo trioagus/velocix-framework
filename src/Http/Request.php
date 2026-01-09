@@ -111,6 +111,16 @@ class Request
         return $this->header('X-Requested-With') === 'XMLHttpRequest';
     }
 
+    /**
+     * Check if request is from Velocix SPA
+     * 
+     * @return bool
+     */
+    public function isSpaRequest()
+    {
+        return $this->header('X-Velocix-Spa') === 'true';
+    }
+
     public function header($key, $default = null)
     {
         $key = str_replace('_', '-', strtolower($key));
@@ -133,5 +143,231 @@ class Request
         }
         
         return null;
+    }
+
+    /**
+     * Check if the request has a file
+     * 
+     * @param string $key
+     * @return bool
+     */
+    public function hasFile($key)
+    {
+        if (!isset($this->files[$key])) {
+            return false;
+        }
+        
+        $file = $this->files[$key];
+        
+        // Check if file was uploaded
+        if (is_array($file)) {
+            // Handle multiple files or single file
+            if (isset($file['error'])) {
+                return $file['error'] !== UPLOAD_ERR_NO_FILE;
+            }
+            
+            // Array of files
+            return !empty($file);
+        }
+        
+        return false;
+    }
+
+    /**
+     * Get uploaded file
+     * 
+     * @param string $key
+     * @return UploadedFile|null
+     */
+    public function file($key)
+    {
+        if (!$this->hasFile($key)) {
+            return null;
+        }
+        
+        $file = $this->files[$key];
+        
+        return new UploadedFile(
+            $file['tmp_name'],
+            $file['name'],
+            $file['type'],
+            $file['size'],
+            $file['error']
+        );
+    }
+
+    /**
+     * Get all uploaded files
+     * 
+     * @return array
+     */
+    public function allFiles()
+    {
+        $files = [];
+        
+        foreach ($this->files as $key => $file) {
+            if ($this->hasFile($key)) {
+                $files[$key] = $this->file($key);
+            }
+        }
+        
+        return $files;
+    }
+}
+
+/**
+ * UploadedFile class to handle file uploads
+ */
+class UploadedFile
+{
+    protected $path;
+    protected $originalName;
+    protected $mimeType;
+    protected $size;
+    protected $error;
+
+    public function __construct($path, $originalName, $mimeType, $size, $error)
+    {
+        $this->path = $path;
+        $this->originalName = $originalName;
+        $this->mimeType = $mimeType;
+        $this->size = $size;
+        $this->error = $error;
+    }
+
+    /**
+     * Get the original filename
+     * 
+     * @return string
+     */
+    public function getClientOriginalName()
+    {
+        return $this->originalName;
+    }
+
+    /**
+     * Get the file extension
+     * 
+     * @return string
+     */
+    public function getClientOriginalExtension()
+    {
+        return pathinfo($this->originalName, PATHINFO_EXTENSION);
+    }
+
+    /**
+     * Get the mime type
+     * 
+     * @return string
+     */
+    public function getMimeType()
+    {
+        return $this->mimeType;
+    }
+
+    /**
+     * Get the file size
+     * 
+     * @return int
+     */
+    public function getSize()
+    {
+        return $this->size;
+    }
+
+    /**
+     * Get the upload error code
+     * 
+     * @return int
+     */
+    public function getError()
+    {
+        return $this->error;
+    }
+
+    /**
+     * Check if upload was successful
+     * 
+     * @return bool
+     */
+    public function isValid()
+    {
+        return $this->error === UPLOAD_ERR_OK;
+    }
+
+    /**
+     * Get the temporary file path
+     * 
+     * @return string
+     */
+    public function getPathname()
+    {
+        return $this->path;
+    }
+
+    /**
+     * Move the uploaded file to a new location
+     * 
+     * @param string $directory
+     * @param string|null $name
+     * @return string|false The final file path or false on failure
+     */
+    public function move($directory, $name = null)
+    {
+        if (!$this->isValid()) {
+            return false;
+        }
+
+        // Create directory if it doesn't exist
+        if (!is_dir($directory)) {
+            mkdir($directory, 0755, true);
+        }
+
+        // Generate filename if not provided
+        if (is_null($name)) {
+            $name = $this->hashName();
+        }
+
+        $target = rtrim($directory, '/') . '/' . $name;
+
+        if (move_uploaded_file($this->path, $target)) {
+            return $target;
+        }
+
+        return false;
+    }
+
+    /**
+     * Store the file in a directory with a hashed name
+     * 
+     * @param string $directory
+     * @return string|false
+     */
+    public function store($directory)
+    {
+        return $this->move($directory, $this->hashName());
+    }
+
+    /**
+     * Generate a unique filename
+     * 
+     * @return string
+     */
+    protected function hashName()
+    {
+        $hash = bin2hex(random_bytes(16));
+        $extension = $this->getClientOriginalExtension();
+        
+        return $hash . ($extension ? '.' . $extension : '');
+    }
+
+    /**
+     * Get file contents
+     * 
+     * @return string|false
+     */
+    public function get()
+    {
+        return file_get_contents($this->path);
     }
 }

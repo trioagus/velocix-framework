@@ -2,6 +2,8 @@
 
 namespace Velocix\Http;
 
+use Velocix\Auth\Auth;
+
 abstract class Controller
 {
     protected function json($data, $status = 200)
@@ -11,6 +13,11 @@ abstract class Controller
 
     protected function view($view, $data = [])
     {
+        // Auto inject authenticated user ke semua view (pakai Auth class)
+        if (!isset($data['user'])) {
+            $data['user'] = Auth::user();
+        }
+        
         return Response::view($view, $data);
     }
 

@@ -7,6 +7,7 @@ class Schema
     protected $connection;
     protected $table;
     protected $columns = [];
+    protected $foreignKeys = [];
     protected $driver;
 
     public function __construct(Connection $connection, $table)
@@ -269,11 +270,81 @@ class Schema
         return $this;
     }
 
+    /**
+     * Create foreign key constraint
+     * Returns ForeignKeyDefinition for chaining
+     */
+    public function foreign($column)
+    {
+        return new ForeignKeyDefinition($this, $column);
+    }
+
+    /**
+     * Add foreign key to the schema
+     * Called by ForeignKeyDefinition
+     */
+    public function addForeignKey($column, $references, $on, $onDelete = 'RESTRICT', $onUpdate = 'RESTRICT')
+    {
+        $constraintName = "{$this->table}_{$column}_foreign";
+        
+        switch ($this->driver) {
+            case 'mysql':
+            case 'pgsql':
+                $constraint = "CONSTRAINT {$constraintName} FOREIGN KEY ({$column}) REFERENCES {$on}({$references})";
+                
+                if ($onDelete) {
+                    $constraint .= " ON DELETE {$onDelete}";
+                }
+                if ($onUpdate) {
+                    $constraint .= " ON UPDATE {$onUpdate}";
+                }
+                
+                $this->foreignKeys[] = $constraint;
+                break;
+            
+            case 'sqlite':
+                // SQLite handles foreign keys differently, we'll add them in column definition
+                // For now, store the constraint info
+                $this->foreignKeys[] = [
+                    'column' => $column,
+                    'references' => $references,
+                    'on' => $on,
+                    'onDelete' => $onDelete,
+                    'onUpdate' => $onUpdate
+                ];
+                break;
+        }
+        
+        return $this;
+    }
+
     public function execute()
     {
-        $sql = "CREATE TABLE IF NOT EXISTS {$this->table} (" . 
-               implode(', ', $this->columns) . 
-               ")";
+        $columnsDefinition = implode(', ', $this->columns);
+        
+        // Add foreign keys
+        if (!empty($this->foreignKeys)) {
+            if ($this->driver === 'sqlite') {
+                // SQLite: Add FOREIGN KEY at the end
+                foreach ($this->foreignKeys as $fk) {
+                    if (is_array($fk)) {
+                        $fkDef = "FOREIGN KEY ({$fk['column']}) REFERENCES {$fk['on']}({$fk['references']})";
+                        if ($fk['onDelete']) {
+                            $fkDef .= " ON DELETE {$fk['onDelete']}";
+                        }
+                        if ($fk['onUpdate']) {
+                            $fkDef .= " ON UPDATE {$fk['onUpdate']}";
+                        }
+                        $columnsDefinition .= ', ' . $fkDef;
+                    }
+                }
+            } else {
+                // MySQL/PostgreSQL: Add as constraints
+                $columnsDefinition .= ', ' . implode(', ', $this->foreignKeys);
+            }
+        }
+        
+        $sql = "CREATE TABLE IF NOT EXISTS {$this->table} ({$columnsDefinition})";
         
         // Add database-specific options
         switch ($this->driver) {
@@ -283,5 +354,92 @@ class Schema
         }
         
         $this->connection->query($sql);
+    }
+}
+
+/**
+ * Foreign Key Definition Builder
+ */
+class ForeignKeyDefinition
+{
+    protected $schema;
+    protected $column;
+    protected $references;
+    protected $on;
+    protected $onDelete = 'RESTRICT';
+    protected $onUpdate = 'RESTRICT';
+
+    public function __construct(Schema $schema, $column)
+    {
+        $this->schema = $schema;
+        $this->column = $column;
+    }
+
+    /**
+     * Set the referenced column
+     */
+    public function references($column)
+    {
+        $this->references = $column;
+        return $this;
+    }
+
+    /**
+     * Set the referenced table
+     */
+    public function on($table)
+    {
+        $this->on = $table;
+        return $this;
+    }
+
+    /**
+     * Set ON DELETE action
+     */
+    public function onDelete($action)
+    {
+        $this->onDelete = strtoupper($action);
+        return $this;
+    }
+
+    /**
+     * Set ON UPDATE action
+     */
+    public function onUpdate($action)
+    {
+        $this->onUpdate = strtoupper($action);
+        return $this;
+    }
+
+    /**
+     * Shortcut for ON DELETE CASCADE
+     */
+    public function cascadeOnDelete()
+    {
+        return $this->onDelete('CASCADE');
+    }
+
+    /**
+     * Shortcut for ON UPDATE CASCADE
+     */
+    public function cascadeOnUpdate()
+    {
+        return $this->onUpdate('CASCADE');
+    }
+
+    /**
+     * Finalize the foreign key definition
+     */
+    public function __destruct()
+    {
+        if ($this->references && $this->on) {
+            $this->schema->addForeignKey(
+                $this->column,
+                $this->references,
+                $this->on,
+                $this->onDelete,
+                $this->onUpdate
+            );
+        }
     }
 }

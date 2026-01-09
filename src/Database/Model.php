@@ -13,6 +13,8 @@ abstract class Model
     protected $original = [];
     protected $fillable = [];
     protected $hidden = [];
+    protected static $booted = [];
+    protected static $events = [];
     
     public static function setConnection(Connection $connection)
     {
@@ -43,8 +45,6 @@ abstract class Model
             }
         }
     }
-
-    protected static $booted = [];
 
     protected function fill($attributes)
     {
@@ -107,8 +107,8 @@ abstract class Model
         
         if ($data) {
             $model = new static;
-            $model->attributes = $data;
-            $model->original = $data;
+            $model->attributes = (array)$data;
+            $model->original = (array)$data;
             return $model;
         }
         return null;
@@ -128,12 +128,14 @@ abstract class Model
 
     public function save()
     {
-        // Trigger creating event
-        if (!isset($this->attributes[$this->primaryKey]) || empty($this->attributes[$this->primaryKey])) {
-            static::creating($this);
+        $isNew = !isset($this->attributes[$this->primaryKey]) || empty($this->attributes[$this->primaryKey]);
+        
+        // Fire creating event BEFORE checking anything
+        if ($isNew) {
+            $this->fireModelEvent('creating');
         }
 
-        if (isset($this->attributes[$this->primaryKey]) && !empty($this->attributes[$this->primaryKey])) {
+        if (isset($this->attributes[$this->primaryKey]) && !empty($this->attributes[$this->primaryKey]) && !$isNew) {
             // Update existing record
             $id = $this->attributes[$this->primaryKey];
             $changes = array_diff_assoc($this->attributes, $this->original);
@@ -152,7 +154,10 @@ abstract class Model
                 $id = $this->newQuery()->insert($data);
                 $this->attributes[$this->primaryKey] = $id;
             } else {
-                // For UUID/ULID, ID is already set by trait
+                // For UUID/ULID, ID should be set by creating event
+                if (empty($data[$this->primaryKey])) {
+                    throw new \Exception("Primary key '{$this->primaryKey}' must be set before saving non-incrementing model");
+                }
                 $this->newQuery()->insert($data);
             }
             
@@ -172,9 +177,40 @@ abstract class Model
         return false;
     }
 
-    protected static function creating($model)
+    /**
+     * Fire model event
+     */
+    protected function fireModelEvent($event)
     {
-        // Hook for traits
+        $className = static::class;
+        
+        if (!isset(static::$events[$className])) {
+            static::$events[$className] = [];
+        }
+        
+        if (isset(static::$events[$className][$event])) {
+            foreach (static::$events[$className][$event] as $callback) {
+                $callback($this);
+            }
+        }
+    }
+
+    /**
+     * Register creating event listener
+     */
+    protected static function creating($callback)
+    {
+        $className = static::class;
+        
+        if (!isset(static::$events[$className])) {
+            static::$events[$className] = [];
+        }
+        
+        if (!isset(static::$events[$className]['creating'])) {
+            static::$events[$className]['creating'] = [];
+        }
+        
+        static::$events[$className]['creating'][] = $callback;
     }
 
     public function __get($key)

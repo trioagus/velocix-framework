@@ -16,6 +16,9 @@ class Compiler
         // Compile @extends and @section BEFORE other directives
         $content = $this->compileLayoutSystem($content);
         
+        // Compile PHP blocks
+        $content = $this->compilePhp($content);
+        
         // Compile control structures
         $content = $this->compileForeach($content);
         $content = $this->compileEndForeach($content);
@@ -37,6 +40,18 @@ class Compiler
         // Compile echoes (LAST)
         $content = $this->compileRawEchos($content);
         $content = $this->compileEchos($content);
+        
+        return $content;
+    }
+
+    protected function compilePhp($content)
+    {
+        // Compile @php ... @endphp blocks
+        $content = preg_replace(
+            '/@php\s*(.*?)\s*@endphp/s',
+            '<?php $1 ?>',
+            $content
+        );
         
         return $content;
     }

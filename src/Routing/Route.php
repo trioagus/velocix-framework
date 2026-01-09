@@ -13,6 +13,7 @@ class Route
     protected $action;
     protected $middleware = [];
     protected $parameters = [];
+    protected $name;
 
     public function __construct($method, $uri, $action)
     {
@@ -29,6 +30,17 @@ class Route
         );
         
         return $this;
+    }
+
+    public function name($name)
+    {
+        $this->name = $name;
+        return $this;
+    }
+
+    public function getName()
+    {
+        return $this->name;
     }
 
     public function matches(Request $request)

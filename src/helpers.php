@@ -296,15 +296,9 @@ if (!function_exists('dump')) {
 }
 
 if (!function_exists('vite')) {
-    /**
-     * Generate Vite asset tags
-     * 
-     * @param string $entry
-     * @return string
-     */
-    function vite($entry = 'resources/js/app.js')
+    function vite()
     {
-        return \Velocix\Support\Vite::assets($entry);
+        return \Velocix\Support\Vite::assets();
     }
 }
 

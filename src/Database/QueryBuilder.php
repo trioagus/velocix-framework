@@ -16,7 +16,6 @@ class QueryBuilder
     protected $groupBy = [];
     protected $having = [];
 
-    // Whitelist untuk ORDER BY dan column names
     protected $allowedOperators = ['=', '!=', '<>', '>', '<', '>=', '<=', 'LIKE', 'NOT LIKE', 'IN', 'NOT IN', 'IS NULL', 'IS NOT NULL'];
     protected $allowedDirections = ['ASC', 'DESC'];
 
@@ -27,7 +26,6 @@ class QueryBuilder
 
     public function table($table)
     {
-        // Sanitize table name - only allow alphanumeric and underscore
         if (!preg_match('/^[a-zA-Z0-9_]+$/', $table)) {
             throw new \InvalidArgumentException("Invalid table name: {$table}");
         }
@@ -38,7 +36,6 @@ class QueryBuilder
 
     public function select(...$columns)
     {
-        // Sanitize column names
         foreach ($columns as $column) {
             if (!$this->isValidColumnName($column)) {
                 throw new \InvalidArgumentException("Invalid column name: {$column}");
@@ -56,18 +53,15 @@ class QueryBuilder
             $operator = '=';
         }
 
-        // Validate operator
         $operator = strtoupper(trim($operator));
         if (!in_array($operator, $this->allowedOperators)) {
             throw new \InvalidArgumentException("Invalid operator: {$operator}");
         }
 
-        // Validate column name
         if (!$this->isValidColumnName($column)) {
             throw new \InvalidArgumentException("Invalid column name: {$column}");
         }
 
-        // Use prepared statements - NO direct value interpolation
         if ($operator === 'IN' || $operator === 'NOT IN') {
             if (!is_array($value)) {
                 throw new \InvalidArgumentException("Value for IN operator must be an array");
@@ -115,12 +109,10 @@ class QueryBuilder
 
     public function orderBy($column, $direction = 'ASC')
     {
-        // Validate column
         if (!$this->isValidColumnName($column)) {
             throw new \InvalidArgumentException("Invalid column name: {$column}");
         }
 
-        // Validate direction
         $direction = strtoupper(trim($direction));
         if (!in_array($direction, $this->allowedDirections)) {
             throw new \InvalidArgumentException("Invalid sort direction: {$direction}");
@@ -132,7 +124,6 @@ class QueryBuilder
 
     public function limit($limit)
     {
-        // Validate limit is positive integer
         if (!is_numeric($limit) || $limit < 0) {
             throw new \InvalidArgumentException("Limit must be a positive integer");
         }
@@ -143,7 +134,6 @@ class QueryBuilder
 
     public function offset($offset)
     {
-        // Validate offset is positive integer
         if (!is_numeric($offset) || $offset < 0) {
             throw new \InvalidArgumentException("Offset must be a positive integer");
         }
@@ -156,14 +146,44 @@ class QueryBuilder
     {
         $sql = $this->buildSelectSql();
         $stmt = $this->connection->query($sql, $this->bindings);
-        return $stmt->fetchAll();
+        $results = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        
+        // Convert to model instances
+        $modelClass = $this->getModelClass();
+        if ($modelClass) {
+            return array_map(function($row) use ($modelClass) {
+                $model = new $modelClass();
+                foreach ($row as $key => $value) {
+                    $model->$key = $value;
+                }
+                return $model;
+            }, $results);
+        }
+        
+        // Fallback to stdClass
+        return array_map(function($row) {
+            return (object)$row;
+        }, $results);
+    }
+    
+    protected function getModelClass()
+    {
+        // Try to determine model class from table name
+        $singular = rtrim($this->table, 's');
+        $className = 'App\\Models\\' . ucfirst($singular);
+        
+        if (class_exists($className)) {
+            return $className;
+        }
+        
+        return null;
     }
 
     public function first()
     {
         $this->limit(1);
         $result = $this->get();
-        return $result[0] ?? null;
+        return !empty($result) ? $result[0] : null;
     }
 
     public function find($id)
@@ -178,7 +198,7 @@ class QueryBuilder
         
         $sql = $this->buildSelectSql();
         $stmt = $this->connection->query($sql, $this->bindings);
-        $result = $stmt->fetch();
+        $result = $stmt->fetch(\PDO::FETCH_OBJ);
         
         $this->selects = $originalSelects;
         
@@ -187,12 +207,10 @@ class QueryBuilder
 
     public function insert($data)
     {
-        // Validate data
         if (empty($data) || !is_array($data)) {
             throw new \InvalidArgumentException("Insert data must be a non-empty array");
         }
 
-        // Validate column names
         foreach (array_keys($data) as $column) {
             if (!$this->isValidColumnName($column)) {
                 throw new \InvalidArgumentException("Invalid column name: {$column}");
@@ -210,12 +228,10 @@ class QueryBuilder
 
     public function update($data)
     {
-        // Validate data
         if (empty($data) || !is_array($data)) {
             throw new \InvalidArgumentException("Update data must be a non-empty array");
         }
 
-        // Validate column names
         foreach (array_keys($data) as $column) {
             if (!$this->isValidColumnName($column)) {
                 throw new \InvalidArgumentException("Invalid column name: {$column}");
@@ -276,28 +292,17 @@ class QueryBuilder
         return $sql;
     }
 
-    /**
-     * Validate column name to prevent SQL injection
-     * Allow: letters, numbers, underscore, dot (for table.column)
-     */
     protected function isValidColumnName($column)
     {
-        // Allow * for SELECT *
         if ($column === '*') {
             return true;
         }
 
-        // Allow table.column format
-        // Allow AS aliases
-        // Allow COUNT(*), SUM(), etc
         $pattern = '/^[a-zA-Z0-9_\.]+(\s+as\s+[a-zA-Z0-9_]+)?$|^(COUNT|SUM|AVG|MIN|MAX)\([a-zA-Z0-9_\.\*]+\)(\s+as\s+[a-zA-Z0-9_]+)?$/i';
         
         return preg_match($pattern, trim($column)) === 1;
     }
 
-    /**
-     * Reset query builder state
-     */
     public function reset()
     {
         $this->wheres = [];
