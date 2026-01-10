@@ -24,9 +24,60 @@ class Request
         return $request;
     }
 
+    /**
+     * Get the HTTP method with support for method spoofing
+     * FIXED: Tambah support untuk _method field
+     * 
+     * @return string
+     */
     public function method()
     {
-        return $this->server['REQUEST_METHOD'] ?? 'GET';
+        $method = strtoupper($this->server['REQUEST_METHOD'] ?? 'GET');
+        
+        // Support method spoofing untuk POST requests
+        if ($method === 'POST') {
+            // Check _method di POST data
+            if (isset($this->request['_method'])) {
+                $spoofedMethod = strtoupper($this->request['_method']);
+                
+                // Hanya allow PUT, PATCH, DELETE
+                if (in_array($spoofedMethod, ['PUT', 'PATCH', 'DELETE'])) {
+                    return $spoofedMethod;
+                }
+            }
+            
+            // Check _method di JSON body
+            $json = $this->json();
+            if (isset($json['_method'])) {
+                $spoofedMethod = strtoupper($json['_method']);
+                
+                if (in_array($spoofedMethod, ['PUT', 'PATCH', 'DELETE'])) {
+                    return $spoofedMethod;
+                }
+            }
+        }
+        
+        return $method;
+    }
+    
+    /**
+     * Get the original HTTP method (without spoofing)
+     * 
+     * @return string
+     */
+    public function getRealMethod()
+    {
+        return strtoupper($this->server['REQUEST_METHOD'] ?? 'GET');
+    }
+    
+    /**
+     * Check if method is spoofed
+     * 
+     * @return bool
+     */
+    public function isMethodSpoofed()
+    {
+        return $this->method() !== $this->getRealMethod();
     }
 
     public function path()
