@@ -25,12 +25,34 @@ class Logger
     }
 
     /**
-     * Get default log path
+     * Get default log path - FIXED
      */
     protected function getDefaultLogPath()
     {
-        $basePath = dirname(dirname(dirname(dirname(__DIR__))));
-        return $basePath . '/storage/logs';
+        // Cari root project (tempat vendor berada)
+        $currentDir = __DIR__;
+        
+        // Naik dari vendor/trioagus/velocix-framework/src/Support ke root
+        // Atau pakai $_SERVER['DOCUMENT_ROOT'] kalau available
+        
+        // Method 1: Cari folder vendor
+        while (!file_exists($currentDir . '/vendor') && $currentDir !== '/') {
+            $currentDir = dirname($currentDir);
+        }
+        
+        // Kalau ketemu folder vendor, berarti ini root
+        if (file_exists($currentDir . '/vendor')) {
+            return $currentDir . '/storage/logs';
+        }
+        
+        // Method 2: Fallback pakai DOCUMENT_ROOT
+        if (isset($_SERVER['DOCUMENT_ROOT'])) {
+            $root = dirname($_SERVER['DOCUMENT_ROOT']);
+            return $root . '/storage/logs';
+        }
+        
+        // Method 3: Hardcoded fallback (ganti sesuai struktur lu)
+        return '/data/data/com.termux/files/home/my-app/storage/logs';
     }
 
     /**
